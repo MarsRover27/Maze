@@ -8,6 +8,7 @@ WALL = 0
 ROAD = 1
 ENTRANCE = 2
 EXIT = 3
+TRAP = 4
 
 C_RESET = "\x1b[0m"
 C_DIM = "\x1b[2m"
@@ -15,6 +16,7 @@ C_WALL = "\x1b[90m"
 C_ROAD = "\x1b[97m"
 C_ENT = "\x1b[92m"
 C_EXIT = "\x1b[91m"
+C_TRAP = "\x1b[93m"
 
 def make_grid(h, w, fill=WALL):
     return [[fill for _ in range(w)] for _ in range(h)]
@@ -96,7 +98,90 @@ def carve_simple_guaranteed_path(g, seed=None):
 
     return g
 
-def generate_maze(height, width, seed=None):
+def find_points(g):
+    sr = sc = er = ec = None
+    h = len(g)
+    w = len(g[0])
+    for r in range(h):
+        for c in range(w):
+            if g[r][c] == ENTRANCE:
+                sr, sc = r, c
+            elif g[r][c] == EXIT:
+                er, ec = r, c
+    return (sr, sc), (er, ec)
+
+def alive_path_exists(g):
+    (sr, sc), (er, ec) = find_points(g)
+    if sr is None or er is None:
+        return False
+
+    h = len(g)
+    w = len(g[0])
+
+    dist = [[[-1] * 3 for _ in range(w)] for _ in range(h)]
+    q = deque()
+
+    dist[sr][sc][0] = 0
+    q.append((sr, sc, 0))
+
+    while q:
+        r, c, t = q.popleft()
+        if (r, c) == (er, ec):
+            return True
+
+        for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)):
+            nr, nc = r + dr, c + dc
+            if not (0 <= nr < h and 0 <= nc < w):
+                continue
+
+            v = g[nr][nc]
+            if v == WALL:
+                continue
+
+            nt = t + (1 if v == TRAP else 0)
+            if nt > 2:
+                continue
+
+            if dist[nr][nc][nt] == -1:
+                dist[nr][nc][nt] = dist[r][c][t] + 1
+                q.append((nr, nc, nt))
+
+    return False
+
+def add_traps(g, seed=None, max_traps=5):
+    if seed is not None:
+        random.seed(seed + 1000003)
+
+    h = len(g)
+    w = len(g[0])
+
+    k = random.randint(0, max_traps)
+
+    candidates = []
+    for r in range(h):
+        for c in range(w):
+            if g[r][c] == ROAD:
+                candidates.append((r, c))
+
+    random.shuffle(candidates)
+
+    placed = 0
+    attempts = 0
+    limit = max(200, len(candidates) * 2)
+
+    while placed < k and attempts < limit and candidates:
+        attempts += 1
+        r, c = candidates.pop()
+
+        g[r][c] = TRAP
+        if alive_path_exists(g):
+            placed += 1
+        else:
+            g[r][c] = ROAD
+
+    return g
+
+def generate_maze(height, width, seed=None, traps=True):
     if seed is not None:
         random.seed(seed)
 
@@ -112,7 +197,10 @@ def generate_maze(height, width, seed=None):
     cw = (width - 1) // 2
 
     if ch <= 1 or cw <= 1:
-        return carve_simple_guaranteed_path(g, seed=seed)
+        g = carve_simple_guaranteed_path(g, seed=seed)
+        if traps:
+            g = add_traps(g, seed=seed, max_traps=5)
+        return g
 
     for cr in range(ch):
         for cc in range(cw):
@@ -164,7 +252,10 @@ def generate_maze(height, width, seed=None):
         add_candidate(r, width - 1, r, width - 2)
 
     if not border_candidates:
-        return carve_simple_guaranteed_path(g, seed=seed)
+        g = carve_simple_guaranteed_path(g, seed=seed)
+        if traps:
+            g = add_traps(g, seed=seed, max_traps=5)
+        return g
 
     adj_points = [a for (_, a) in border_candidates]
 
@@ -209,6 +300,14 @@ def generate_maze(height, width, seed=None):
     g[er][ec] = ENTRANCE
     g[xr][xc] = EXIT
 
+    if traps:
+        g = add_traps(g, seed=seed, max_traps=5)
+        if not alive_path_exists(g):
+            for r in range(height):
+                for c in range(width):
+                    if g[r][c] == TRAP:
+                        g[r][c] = ROAD
+
     return g
 
 def print_maze(g, use_numbers=False, with_color=True):
@@ -236,13 +335,16 @@ def print_maze(g, use_numbers=False, with_color=True):
             elif v == EXIT:
                 ch = "E"
                 line.append((C_EXIT + ch + C_RESET) if with_color else ch)
+            elif v == TRAP:
+                ch = "T"
+                line.append((C_TRAP + ch + C_RESET) if with_color else ch)
             else:
                 line.append("?")
         print("".join(line))
 
 def main(argv):
     if len(argv) < 3:
-        print("Usage: python maze.py H W [--seed N] [--numbers] [--no-color]")
+        print("Usage: python maze.py H W [--seed N] [--numbers] [--no-color] [--no-traps]")
         return 1
 
     try:
@@ -255,6 +357,7 @@ def main(argv):
     seed = None
     use_numbers = False
     with_color = True
+    traps = True
 
     i = 3
     while i < len(argv):
@@ -271,11 +374,14 @@ def main(argv):
         elif argv[i] == "--no-color":
             with_color = False
             i += 1
+        elif argv[i] == "--no-traps":
+            traps = False
+            i += 1
         else:
             i += 1
 
     try:
-        g = generate_maze(H, W, seed=seed)
+        g = generate_maze(H, W, seed=seed, traps=traps)
     except ValueError as e:
         print(f"Error: {e}")
         return 2
