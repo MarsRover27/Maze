@@ -114,4 +114,4 @@ Let H × W be the maze size.
 
 This makes the algorithm efficient and scalable for large mazes.
 
-3-5 hours were spent on development
+A total of 3-5 hours were spent on development.
