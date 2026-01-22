@@ -35,7 +35,7 @@ python --version
 
 Download the project:
 ```bash
-git clone https://github.com/MarsRover23/Maze.git
+git clone https://github.com/MarsRover27/Maze
 cd Maze
 ```
 Install dependencies:
